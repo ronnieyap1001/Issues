@@ -1,76 +1,96 @@
 <!doctype html>
-return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grok Demand Finder — Feed</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="mb-6 flex items-center justify-between">
+      <h1 class="text-2xl font-bold">Grok Demand Finder — Stacked Feed</h1>
+      <div class="text-sm text-slate-500" id="meta"></div>
+    </header>
 
+    <section class="mb-4 flex flex-wrap gap-2 items-end">
+      <label class="block">
+        <span class="text-xs text-slate-600">Filter</span>
+        <input id="q" placeholder="Search text…" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm w-72" />
+      </label>
+      <button id="refreshBtn" class="rounded-xl border px-3 py-2 text-sm">Refresh</button>
+      <button id="moreBtn" class="rounded-xl border px-3 py-2 text-sm">Load more</button>
+      <button id="exportBtn" class="rounded-xl border px-3 py-2 text-sm">Export CSV</button>
+    </section>
+
+    <div class="overflow-auto rounded-xl border bg-white shadow-sm">
+      <table class="min-w-full text-sm" id="tbl">
+        <thead class="bg-slate-100">
+          <tr>
+            <th class="text-left px-3 py-2">Date</th>
+            <th class="text-left px-3 py-2">Problem / Need</th>
+            <th class="text-left px-3 py-2">Source</th>
+            <th class="text-left px-3 py-2">URL</th>
+            <th class="text-left px-3 py-2">Category</th>
+            <th class="text-left px-3 py-2">Suggested Solution</th>
+            <th class="text-left px-3 py-2">Market Potential</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <footer class="mt-6 text-xs text-slate-500">
+      Newest items are stacked on top • Daily update at 08:00 Asia/Singapore
+    </footer>
+  </div>
+
+<script>
+const API_BASE = "https://YOUR-WORKER.SUBDOMAIN.workers.dev"; // <-- set this
+let LIMIT = 200; // initial number of rows to load
+let LAST_JSON = { items: [] };
+
+const tbody = document.getElementById('tbody');
+const meta = document.getElementById('meta');
+const q = document.getElementById('q');
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function render(rows){
-const filter = (q.value||"").toLowerCase();
-const html = rows
-.filter(r => !filter || JSON.stringify(r).toLowerCase().includes(filter))
-.map(r => `
-<tr class="border-t">
-<td class="px-3 py-2 align-top">${esc(r.problem)}</td>
-<td class="px-3 py-2 align-top">${esc(r.source)}</td>
-<td class="px-3 py-2 align-top"><a class="text-blue-700 underline" href="${r.url}" target="_blank">Link</a></td>
-<td class="px-3 py-2 align-top">${esc(r.category)}</td>
-<td class="px-3 py-2 align-top">${esc(r.suggested_solution)}</td>
-<td class="px-3 py-2 align-top font-semibold">${Number(r.market_potential ?? 0)}</td>
-</tr>`).join('');
-tbody.innerHTML = html || `<tr><td class="px-3 py-4 text-slate-500" colspan="6">No data</td></tr>`;
+  const filter = (q.value||"").toLowerCase();
+  const filtered = rows.filter(r => !filter || JSON.stringify(r).toLowerCase().includes(filter));
+  const html = filtered.map(r => `
+    <tr class="border-t">
+      <td class="px-3 py-2 align-top whitespace-nowrap">${esc(r.date)}</td>
+      <td class="px-3 py-2 align-top">${esc(r.problem)}</td>
+      <td class="px-3 py-2 align-top">${esc(r.source)}</td>
+      <td class="px-3 py-2 align-top"><a class="text-blue-700 underline" href="${r.url}" target="_blank">Link</a></td>
+      <td class="px-3 py-2 align-top">${esc(r.category)}</td>
+      <td class="px-3 py-2 align-top">${esc(r.suggested_solution)}</td>
+      <td class="px-3 py-2 align-top font-semibold">${Number(r.market_potential ?? 0)}</td>
+    </tr>`).join('');
+  tbody.innerHTML = html || `<tr><td class="px-3 py-4 text-slate-500" colspan="7">No data</td></tr>`;
 }
 
-
-async function loadDates(){
-const r = await fetch(`${API_BASE}/api/dates`);
-const {dates=[]} = await r.json();
-dateSelect.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+async function loadFeed(){
+  const r = await fetch(`${API_BASE}/api/feed?limit=${LIMIT}`);
+  LAST_JSON = await r.json();
+  render(LAST_JSON.items || []);
+  meta.textContent = `Updated: ${LAST_JSON.updated || 'n/a'} • Showing ${Math.min(LIMIT, LAST_JSON.count || 0)} of ${LAST_JSON.count || 0}`;
 }
 
-
-async function load(date){
-const ep = date ? `/api/by-date?date=${date}` : '/api/latest';
-const r = await fetch(`${API_BASE}${ep}`);
-const data = await r.json();
-const items = data.items || [];
-render(items);
-meta.textContent = `Window ${data.from_date || ''} → ${data.date || ''} • Sources used: ${data.meta?.num_sources_used ?? 'n/a'}`;
-}
-
-
-q.addEventListener('input', () => {
-// re-render using currently cached rows in table (simple approach)
-// Better: keep last JSON; for brevity, just reload latest
-const chosen = dateSelect.value;
-load(chosen);
-});
-
-
-document.getElementById('refreshBtn').onclick = async () => {
-await load(dateSelect.value);
-};
-
-
+q.addEventListener('input', () => render(LAST_JSON.items || []));
+document.getElementById('refreshBtn').onclick = loadFeed;
+document.getElementById('moreBtn').onclick = async () => { LIMIT += 200; await loadFeed(); };
 document.getElementById('exportBtn').onclick = () => {
-const rows = [...document.querySelectorAll('#tbody tr')].map(tr =>
-[...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\n/g, ' '))
-);
-const header = ["Problem","Source","URL","Category","Suggested Solution","Market Potential"];
-const csv = [header, ...rows]
-.map(r => r.map(v => '"' + v.replace(/"/g,'""') + '"').join(','))
-.join('\n');
-const blob = new Blob([csv], {type: 'text/csv'});
-const a = document.createElement('a');
-a.href = URL.createObjectURL(blob);
-a.download = `grok-demand-${dateSelect.value || 'latest'}.csv`;
-a.click();
+  const a = document.createElement('a');
+  a.href = `${API_BASE}/api/feed/csv?limit=${LIMIT}`;
+  a.download = `grok-demand-feed.csv`;
+  a.click();
 };
-
 
 // init
-( async () => {
-await loadDates();
-await load();
-})();
+(async () => { await loadFeed(); })();
 </script>
 </body>
 </html>
