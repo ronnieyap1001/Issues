@@ -1,0 +1,76 @@
+<!doctype html>
+return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+
+function render(rows){
+const filter = (q.value||"").toLowerCase();
+const html = rows
+.filter(r => !filter || JSON.stringify(r).toLowerCase().includes(filter))
+.map(r => `
+<tr class="border-t">
+<td class="px-3 py-2 align-top">${esc(r.problem)}</td>
+<td class="px-3 py-2 align-top">${esc(r.source)}</td>
+<td class="px-3 py-2 align-top"><a class="text-blue-700 underline" href="${r.url}" target="_blank">Link</a></td>
+<td class="px-3 py-2 align-top">${esc(r.category)}</td>
+<td class="px-3 py-2 align-top">${esc(r.suggested_solution)}</td>
+<td class="px-3 py-2 align-top font-semibold">${Number(r.market_potential ?? 0)}</td>
+</tr>`).join('');
+tbody.innerHTML = html || `<tr><td class="px-3 py-4 text-slate-500" colspan="6">No data</td></tr>`;
+}
+
+
+async function loadDates(){
+const r = await fetch(`${API_BASE}/api/dates`);
+const {dates=[]} = await r.json();
+dateSelect.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+}
+
+
+async function load(date){
+const ep = date ? `/api/by-date?date=${date}` : '/api/latest';
+const r = await fetch(`${API_BASE}${ep}`);
+const data = await r.json();
+const items = data.items || [];
+render(items);
+meta.textContent = `Window ${data.from_date || ''} → ${data.date || ''} • Sources used: ${data.meta?.num_sources_used ?? 'n/a'}`;
+}
+
+
+q.addEventListener('input', () => {
+// re-render using currently cached rows in table (simple approach)
+// Better: keep last JSON; for brevity, just reload latest
+const chosen = dateSelect.value;
+load(chosen);
+});
+
+
+document.getElementById('refreshBtn').onclick = async () => {
+await load(dateSelect.value);
+};
+
+
+document.getElementById('exportBtn').onclick = () => {
+const rows = [...document.querySelectorAll('#tbody tr')].map(tr =>
+[...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\n/g, ' '))
+);
+const header = ["Problem","Source","URL","Category","Suggested Solution","Market Potential"];
+const csv = [header, ...rows]
+.map(r => r.map(v => '"' + v.replace(/"/g,'""') + '"').join(','))
+.join('\n');
+const blob = new Blob([csv], {type: 'text/csv'});
+const a = document.createElement('a');
+a.href = URL.createObjectURL(blob);
+a.download = `grok-demand-${dateSelect.value || 'latest'}.csv`;
+a.click();
+};
+
+
+// init
+( async () => {
+await loadDates();
+await load();
+})();
+</script>
+</body>
+</html>
